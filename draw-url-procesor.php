@@ -1,57 +1,55 @@
 <?php
 /*
-Plugin Name: Draw URL Processor
-Description: Envía URLs a draw.io sin mostrarlas al usuario
+Plugin Name: Trash Posts Processor
+Description: Envía posts a la papelera usando URLs o IDs
 Version: 1.0
 */
 
 add_action('admin_menu', function() {
     add_menu_page(
-        'Draw URL Processor',
-        'Draw URL Processor',
+        'Trash Processor',
+        'Trash Processor',
         'manage_options',
-        'draw-url-processor',
-        'dup_render_page'
+        'trash-processor',
+        'tpp_render_page'
     );
 });
 
-function dup_render_page() {
+function tpp_render_page() {
 ?>
 <div class="wrap">
-    <h1>Draw URL Processor</h1>
+    <h1>Enviar a Trash</h1>
 
-    <textarea id="dup_urls" rows="12" style="width:100%;" placeholder="1 URL por línea"></textarea>
+    <textarea id="tpp_input" rows="15" style="width:100%;" placeholder="URLs o IDs (1 por línea)"></textarea>
 
     <br><br>
 
-    <button id="dup_process" class="button button-primary">
+    <button id="tpp_process" class="button button-primary">
         Procesar
     </button>
 </div>
 
 <script>
-document.getElementById('dup_process').addEventListener('click', function(){
+document.getElementById('tpp_process').addEventListener('click', function(){
 
-    const urls = document.getElementById('dup_urls').value
+    const data = document.getElementById('tpp_input').value
         .split('\n')
-        .map(u => u.trim())
-        .filter(u => u.length > 0);
+        .map(v => v.trim())
+        .filter(v => v.length > 0);
 
-    if(urls.length === 0){
-        alert('No hay URLs');
+    if(data.length === 0){
+        alert('No hay datos');
         return;
     }
 
     fetch(ajaxurl, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'action=dup_generate&urls=' + encodeURIComponent(JSON.stringify(urls))
+        body: 'action=tpp_process&data=' + encodeURIComponent(JSON.stringify(data))
     })
     .then(res => res.json())
-    .then(data => {
-        if(data.url){
-            window.open(data.url, '_blank');
-        }
+    .then(res => {
+        alert('Procesados: ' + res.total + ' | Enviados a Trash: ' + res.trashed);
     });
 
 });
@@ -59,44 +57,30 @@ document.getElementById('dup_process').addEventListener('click', function(){
 <?php
 }
 
-add_action('wp_ajax_dup_generate', function(){
+add_action('wp_ajax_tpp_process', function(){
 
-    $urls = json_decode(stripslashes($_POST['urls']), true);
+    $items = json_decode(stripslashes($_POST['data']), true);
 
-    $y = 20;
-    $nodes = '';
+    $trashed = 0;
+    $total = count($items);
 
-    foreach($urls as $i => $url){
-        $id = $i + 2;
+    foreach($items as $item){
 
-        $safe_url = htmlspecialchars($url, ENT_QUOTES);
+        // Detectar si es ID o URL
+        if(is_numeric($item)){
+            $post_id = intval($item);
+        } else {
+            $post_id = url_to_postid($item);
+        }
 
-        $nodes .= '
-        <mxCell id="'.$id.'" value="'.$safe_url.'" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-            <mxGeometry x="20" y="'.$y.'" width="300" height="60" as="geometry"/>
-        </mxCell>';
-
-        $y += 80;
+        if($post_id && get_post($post_id)){
+            wp_trash_post($post_id);
+            $trashed++;
+        }
     }
 
-    $xml = '
-    <mxfile host="app.diagrams.net">
-        <diagram name="URLs">
-            <mxGraphModel>
-                <root>
-                    <mxCell id="0"/>
-                    <mxCell id="1" parent="0"/>
-                    '.$nodes.'
-                </root>
-            </mxGraphModel>
-        </diagram>
-    </mxfile>';
-
-    $encoded = base64_encode($xml);
-
-    $draw_url = 'https://app.diagrams.net/?create=' . urlencode($encoded);
-
     wp_send_json([
-        'url' => $draw_url
+        'total' => $total,
+        'trashed' => $trashed
     ]);
 });
